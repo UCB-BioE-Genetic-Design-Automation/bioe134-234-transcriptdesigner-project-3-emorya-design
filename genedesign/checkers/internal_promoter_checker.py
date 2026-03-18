@@ -4,9 +4,6 @@ from genedesign.seq_utils.reverse_complement import reverse_complement
 
 class PromoterChecker:
 
-    def __init__(self):
-        self.pwm = None
-
     def initiate(self):
         pfm = [
             [0, 0, 0, 12, 0, 12, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 12, 0, 12, 12, 0],
