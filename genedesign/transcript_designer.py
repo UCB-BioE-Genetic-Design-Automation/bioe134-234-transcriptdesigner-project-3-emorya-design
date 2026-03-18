@@ -78,7 +78,7 @@ _CODON_TO_AA: Dict[str, str] = {
     for codon, _ in pairs
 }
 
-MAX_ITER = 200   # repair iterations before giving up
+MAX_ITER = 500   # repair iterations before giving up
 
 
 class TranscriptDesigner:
@@ -138,7 +138,7 @@ class TranscriptDesigner:
                 break
             codons = self._targeted_repair(list(best_codons), peptide)
             v = self._count_violations(codons)
-            if v < best_violations:
+            if v <= best_violations:
                 best_violations = v
                 best_codons = list(codons)
 
