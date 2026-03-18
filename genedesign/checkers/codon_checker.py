@@ -32,21 +32,33 @@ class CodonChecker:
         codon_usage_file = 'genedesign/data/codon_usage.txt'
         self.codon_frequencies = {}
         self.rare_codons = []
-        self.rare_codon_threshold = 0.1  # Threshold for rare codon frequency
-
+        self.rare_codon_threshold = 0.1
+    
         with open(codon_usage_file, 'r') as f:
             reader = csv.reader(f, delimiter='\t')
             for row in reader:
                 if len(row) < 4:
-                    continue  # Skip invalid rows
+                    continue
                 codon = row[0].strip()
                 usage_freq = float(row[2].strip())
                 self.codon_frequencies[codon] = usage_freq
-                
-                # Identify rare codons
                 if usage_freq < self.rare_codon_threshold:
                     self.rare_codons.append(codon)
-
+    
+        # Build RSCU-normalized codon weights for CAI
+        translator = Translate()
+        translator.initiate()
+    
+        aa_to_codons = {}
+        for codon, aa in translator.codon_table.items():
+            aa_to_codons.setdefault(aa, []).append(codon)
+    
+        self.codon_weights = {}
+        for aa, codons in aa_to_codons.items():
+            max_freq = max(self.codon_frequencies.get(c, 0) for c in codons)
+            for codon in codons:
+                freq = self.codon_frequencies.get(codon, 0)
+                self.codon_weights[codon] = (freq / max_freq) if max_freq > 0 else 0.01
     def run(self, cds: list[str]) -> tuple[bool, float, int, float]:
         """
         Calculates codon diversity, rare codon count, and Codon Adaptation Index (CAI) for the provided CDS.
@@ -67,7 +79,7 @@ class CodonChecker:
         rare_codon_count = sum(codon_counts.get(codon, 0) for codon in self.rare_codons)
 
         # Calculate CAI (Codon Adaptation Index) as the geometric mean of codon frequencies
-        cai_numerators = [self.codon_frequencies.get(codon, 0.01) for codon in cds]  # Use 0.01 for unknown codons
+        cai_numerators = [self.codon_weights.get(codon, 0.01) for codon in cds]  # Use 0.01 for unknown codons
         cai_product = 1
         for freq in cai_numerators:
             cai_product *= freq
@@ -76,7 +88,7 @@ class CodonChecker:
 
         # Apply thresholds to determine if the codons are above board
         diversity_threshold = max(0.3, min(0.5,10 /total_codons))
-        rare_codon_limit = 3
+        rare_codon_limit = rare_codon_limit = max(3, int(total_codons * 0.05))
         cai_threshold = 0.2
 
         codons_above_board = (codon_diversity >= diversity_threshold and
