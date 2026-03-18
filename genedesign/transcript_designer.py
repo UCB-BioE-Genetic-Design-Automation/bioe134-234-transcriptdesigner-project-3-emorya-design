@@ -169,17 +169,21 @@ class TranscriptDesigner:
           total += 1 
         return total
 
-    def _swap_codon(self, codons: List[str], idx: int, peptide: str) -> List[str]:
+    def _swap_codon(self, codons: List[str], idx: int, peptide: str, prefer_first: bool = False) -> List[str]:
         """Replace codon at idx with a different synonymous codon (not the current one)."""
         aa = peptide[idx]
         synonyms = CODON_TABLE[aa]
         if len(synonyms) == 1:
-            return codons
+          return codons
         current = codons[idx]
         alternatives = [(c, w) for c, w in synonyms if c != current]
-        weights = [w for _, w in alternatives]
-        new_codon = random.choices([c for c, _ in alternatives], weights=weights)[0]
-        codons[idx] = new_codon
+        if not alternatives:
+          return codons
+        if prefer_first:
+          codons[idx] = alternatives[0][0]  # highest CAI non-current
+        else:
+          weights = [w for _, w in alternatives]
+          codons[idx] = random.choices([c for c, _ in alternatives], weights=weights)[0]
         return codons
 
     def _targeted_repair(self, codons: List[str], peptide: str) -> List[str]:
@@ -207,7 +211,7 @@ class TranscriptDesigner:
                 for offset in range(-2, 5):
                     idx = max(0, min(codon_idx + offset, n - 1))
                     if len(CODON_TABLE[peptide[idx]]) > 1:
-                        return self._swap_codon(codons, idx, peptide)
+                      return self._swap_codon(codons, idx, peptide, prefer_first=True)
         # --- Internal promoter ---
         passed_p, site_p = self._promoter.run(cds)
         if not passed_p and site_p:
@@ -220,7 +224,7 @@ class TranscriptDesigner:
             for offset in range(-2, 5):
                 idx = max(0, min(codon_idx + offset, n - 1))
                 if len(CODON_TABLE[peptide[idx]]) > 1:
-                  return self._swap_codon(codons, idx, peptide)
+                  return self._swap_codon(codons, idx, peptide, prefer_first=True)
 
 
         # --- Hairpin: swap in a window around a random position ---
