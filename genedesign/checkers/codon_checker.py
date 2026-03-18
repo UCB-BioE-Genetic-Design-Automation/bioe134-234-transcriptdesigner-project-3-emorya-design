@@ -64,7 +64,7 @@ class CodonChecker:
         codon_diversity = len(codon_counts) / total_codons if total_codons > 0 else 0.0
 
         # Count rare codons
-        rare_codon_count = sum(codon_counts(codon_counts.get(codon, 0) for codon in self.rare_codons)
+        rare_codon_count = sum(codon_counts(codon_counts.get(codon, 0)) for codon in self.rare_codons)
 
         # Calculate CAI (Codon Adaptation Index) as the geometric mean of codon frequencies
         cai_numerators = [self.codon_frequencies.get(codon, 0.01) for codon in cds]  # Use 0.01 for unknown codons
