@@ -210,8 +210,16 @@ class TranscriptDesigner:
                 codon_idx = min(pos // 3, n - 1)
                 for offset in range(-2, 5):
                     idx = max(0, min(codon_idx + offset, n - 1))
-                    if len(CODON_TABLE[peptide[idx]]) > 1:
-                      return self._swap_codon(codons, idx, peptide, prefer_first=True)
+                    aa = peptide[idx]
+                for candidate, _ in CODON_TABLE[aa]:
+                    if candidate == codons[idx]:
+                        continue
+                    test_codons = list(codons)
+                    test_codons[idx] = candidate
+                    test_cds = self._cds(test_codons)
+                    if clean_site not in test_cds and clean_site not in reverse_complement(test_cds):
+                        codons[idx] = candidate
+                        return codons
         # --- Internal promoter ---
         passed_p, site_p = self._promoter.run(cds)
         if not passed_p and site_p:
