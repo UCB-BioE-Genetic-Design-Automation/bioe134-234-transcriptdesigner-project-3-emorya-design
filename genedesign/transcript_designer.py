@@ -34,6 +34,7 @@ from genedesign.checkers.hairpin_checker import HairpinChecker
 from genedesign.checkers.forbidden_sequence_checker import ForbiddenSequenceChecker
 from genedesign.checkers.codon_checker import CodonChecker
 from genedesign.checkers.internal_promoter_checker import PromoterChecker
+from genedesign.seq_utils.reverse_complement import reverse_complement
 
 
 # ---------------------------------------------------------------------------
@@ -197,24 +198,30 @@ class TranscriptDesigner:
         # --- Forbidden sequence ---
         passed_f, site_f = self._forbidden.run(cds)
         if not passed_f and site_f:
-            pos = cds.find(site_f)
+            clean_site = site_f.replace(" (reverse strand)", "")
+            pos = cds.find(clean_site)
+            if pos < 0:
+                pos = cds.find(reverse_complement(clean_site))
             if pos >= 0:
                 codon_idx = min(pos // 3, n - 1)
-                for offset in range(3):
-                    idx = min(codon_idx + offset, n - 1)
-                    if CODON_TABLE[peptide[idx]] and len(CODON_TABLE[peptide[idx]]) > 1:
+                for offset in range(-2, 5):
+                    idx = max(0, min(codon_idx + offset, n - 1))
+                    if len(CODON_TABLE[peptide[idx]]) > 1:
                         return self._swap_codon(codons, idx, peptide)
-
         # --- Internal promoter ---
         passed_p, site_p = self._promoter.run(cds)
         if not passed_p and site_p:
-            pos = cds.find(site_p[:6]) if site_p else -1
-            if pos >= 0:
-                codon_idx = min(pos // 3, n - 1)
-                for offset in range(3):
-                    idx = min(codon_idx + offset, n - 1)
-                    if len(CODON_TABLE[peptide[idx]]) > 1:
-                        return self._swap_codon(codons, idx, peptide)
+          anchor = site_p[:6]
+          pos = cds.find(anchor)
+          if pos < 0:
+            pos = cds.find(reverse_complement(anchor))
+          if pos >= 0:
+            codon_idx = min(pos // 3, n - 1)
+            for offset in range(-2, 5):
+                idx = max(0, min(codon_idx + offset, n - 1))
+                if len(CODON_TABLE[peptide[idx]]) > 1:
+                  return self._swap_codon(codons, idx, peptide)
+
 
         # --- Hairpin: swap in a window around a random position ---
         passed_h, _ = self._hairpin.run(cds)
