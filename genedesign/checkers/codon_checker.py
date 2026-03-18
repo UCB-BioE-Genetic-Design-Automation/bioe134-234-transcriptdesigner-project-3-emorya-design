@@ -75,7 +75,7 @@ class CodonChecker:
         cai_value = cai_product ** (1 / len(cai_numerators)) if cai_numerators else 0.0
 
         # Apply thresholds to determine if the codons are above board
-        diversity_threshold = max(0.3, min(0.5,10 /total_codons)
+        diversity_threshold = max(0.3, min(0.5,10 /total_codons))
         rare_codon_limit = 3
         cai_threshold = 0.2
 
