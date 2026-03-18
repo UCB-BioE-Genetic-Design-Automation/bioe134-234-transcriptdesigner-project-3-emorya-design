@@ -1,6 +1,8 @@
 import sys
 import csv
 from collections import Counter  # Import Counter for counting codons
+from genedesign.seq_utils.translate import Translate
+
 
 class CodonChecker:
     """
