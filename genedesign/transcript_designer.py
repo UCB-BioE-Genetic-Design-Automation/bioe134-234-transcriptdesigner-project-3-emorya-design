@@ -168,25 +168,80 @@ class TranscriptDesigner:
           total += 1 
         return total
 
-    def _repair(self, codons: List[str], peptide: str) -> List[str]:
-        """
-        Attempt one repair pass: pick a random codon position (excluding
-        stop) and replace it with a randomly-chosen synonymous codon,
-        weighted by CAI.  This is a single-step Metropolis-like move.
-        """
-        # Choose a random non-stop position
-        n = len(peptide)
-        idx = random.randrange(n)
-        aa  = peptide[idx]
-        synonyms = CODON_TABLE[aa]   # sorted by CAI descending
+    def _swap_codon(self, codons: List[str], idx: int, peptide: str) -> List[str]:
+        """Replace codon at idx with a different synonymous codon (not the current one)."""
+        aa = peptide[idx]
+        synonyms = CODON_TABLE[aa]
         if len(synonyms) == 1:
-            return codons            # no synonymous alternative
-
-        # Weighted random draw (weight = relative adaptiveness)
-        weights  = [w for _, w in synonyms]
-        new_codon = random.choices([c for c, _ in synonyms], weights=weights)[0]
+            return codons
+        current = codons[idx]
+        alternatives = [(c, w) for c, w in synonyms if c != current]
+        weights = [w for _, w in alternatives]
+        new_codon = random.choices([c for c, _ in alternatives], weights=weights)[0]
         codons[idx] = new_codon
         return codons
+
+    def _targeted_repair(self, codons: List[str], peptide: str) -> List[str]:
+        """
+        Check each issue and attempt a targeted fix:
+        - For forbidden/promoter: find the offending region in the CDS, swap
+          a codon overlapping that region.
+        - For hairpin: swap a random codon in the first half of the sequence
+          (hairpins tend to form in GC-rich regions).
+        - For codon diversity: swap the most-repeated codon to a synonym.
+        - Falls back to random swap if nothing targeted applies.
+        """
+        cds = self._cds(codons)
+        n = len(peptide)
+
+        # --- Forbidden sequence ---
+        passed_f, site_f = self._forbidden.run(cds)
+        if not passed_f and site_f:
+            pos = cds.find(site_f)
+            if pos >= 0:
+                codon_idx = min(pos // 3, n - 1)
+                for offset in range(3):
+                    idx = min(codon_idx + offset, n - 1)
+                    if CODON_TABLE[peptide[idx]] and len(CODON_TABLE[peptide[idx]]) > 1:
+                        return self._swap_codon(codons, idx, peptide)
+
+        # --- Internal promoter ---
+        passed_p, site_p = self._promoter.run(cds)
+        if not passed_p and site_p:
+            pos = cds.find(site_p[:6]) if site_p else -1
+            if pos >= 0:
+                codon_idx = min(pos // 3, n - 1)
+                for offset in range(3):
+                    idx = min(codon_idx + offset, n - 1)
+                    if len(CODON_TABLE[peptide[idx]]) > 1:
+                        return self._swap_codon(codons, idx, peptide)
+
+        # --- Hairpin: swap in a window around a random position ---
+        passed_h, _ = self._hairpin.run(cds)
+        if not passed_h:
+            # Try swapping codons in a random window of 10
+            start = random.randint(0, max(0, n - 10))
+            for idx in range(start, min(start + 10, n)):
+                if len(CODON_TABLE[peptide[idx]]) > 1:
+                    return self._swap_codon(codons, idx, peptide)
+
+        # --- Codon diversity: swap the most duplicated codon ---
+        passed_c, _, _, _ = self._codon.run(codons)
+        if not passed_c:
+            from collections import Counter
+            counts = Counter(codons[:n])  # exclude stop
+            most_common_codon, _ = counts.most_common(1)[0]
+            # Find positions where this codon is used and swap one
+            positions = [i for i, c in enumerate(codons[:n]) if c == most_common_codon]
+            if positions:
+                idx = random.choice(positions)
+                aa = peptide[idx]
+                if len(CODON_TABLE[aa]) > 1:
+                    return self._swap_codon(codons, idx, peptide)
+
+        # --- Fallback: random swap ---
+        idx = random.randrange(n)
+        return self._swap_codon(codons, idx, peptide)
 
     # ------------------------------------------------------------------
     # Utility: compute CAI for a list of codons
