@@ -21,3 +21,7 @@ class HairpinChecker:
             if count > 1:
                 return False, hairpin_str
         return True, None
+def hairpin_checker(dna):
+    checker = HairpinChecker()
+    checker.initiate()
+    return checker.run(dna)
