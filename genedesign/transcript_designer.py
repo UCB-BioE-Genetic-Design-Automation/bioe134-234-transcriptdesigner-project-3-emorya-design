@@ -32,6 +32,7 @@ from genedesign.models.transcript import Transcript
 
 from genedesign.checkers.hairpin_checker import HairpinChecker
 from genedesign.checkers.forbidden_sequence_checker import ForbiddenSequenceChecker
+from genedesign.checkers.codon_checker import CodonChecker
 from genedesign.checkers.internal_promoter_checker import PromoterChecker
 
 
@@ -88,6 +89,7 @@ class TranscriptDesigner:
     def __init__(self):
         self.rbsChooser: RBSChooser = None
         self._hairpin   = HairpinChecker()
+        self._codon = CodonChecker()
         self._forbidden = ForbiddenSequenceChecker()
         self._promoter  = PromoterChecker()
 
@@ -99,6 +101,7 @@ class TranscriptDesigner:
         self.rbsChooser = RBSChooser()
         self.rbsChooser.initiate()
         self._hairpin.initiate()
+        self._codon.initiate()
         self._forbidden.initiate()
         self._promoter.initiate()
 
@@ -160,6 +163,9 @@ class TranscriptDesigner:
             passed, _ = checker.run(cds)
             if not passed:
                 total += 1
+        passed_codon, _, _, _ = self._codon.run(codons) 
+        if not passed_codon: 
+          total += 1 
         return total
 
     def _repair(self, codons: List[str], peptide: str) -> List[str]:
