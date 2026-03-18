@@ -126,7 +126,7 @@ class TranscriptDesigner:
             The best design found within the iteration budget.
         """
         # Start with greedy highest-CAI assignment
-        codons = self._targeted_repair(list(best_codons), peptide)
+        codons = self._greedy_codons(peptide)
         codons.append("TAA")           # stop codon
 
         best_codons = list(codons)
@@ -135,7 +135,7 @@ class TranscriptDesigner:
         for _ in range(MAX_ITER):
             if best_violations == 0:
                 break
-            codons = self._repair(list(best_codons), peptide)
+            codons = self._targeted_repair(list(best_codons), peptide)
             v = self._count_violations(codons)
             if v < best_violations:
                 best_violations = v
