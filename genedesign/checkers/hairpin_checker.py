@@ -12,15 +12,18 @@ class HairpinChecker:
         pass
 
     def run(self, dna):
-        n = len(dna)
-        for i in range(0, max(1, n - self.CHUNK_SIZE + 1), self.OVERLAP):
-            chunk = dna[i : i + self.CHUNK_SIZE]
-            count, hairpin_str = hairpin_counter(
-                chunk, self.MIN_STEM, self.MIN_LOOP, self.MAX_LOOP
-            )
-            if count > 1:
-                return False, hairpin_str
-        return True, None
+        starts = list(range(0, max(1, n - self.CHUNK_SIZE + 1), self.OVERLAP))
+    if n > self.CHUNK_SIZE and starts[-1] + self.CHUNK_SIZE < n:
+        starts.append(n - self.CHUNK_SIZE)
+    
+    for i in starts:
+        chunk = dna[i : i + self.CHUNK_SIZE]
+        count, hairpin_str = hairpin_counter(
+            chunk, self.MIN_STEM, self.MIN_LOOP, self.MAX_LOOP
+        )
+        if count > 0:
+            return False, hairpin_str
+    return True, None
 def hairpin_checker(dna):
     checker = HairpinChecker()
     checker.initiate()
