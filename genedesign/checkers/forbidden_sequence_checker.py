@@ -2,8 +2,6 @@ from genedesign.seq_utils.reverse_complement import reverse_complement
 
 
 class ForbiddenSequenceChecker:
-    def __init__(self):
-        self.forbidden = []
 
     def initiate(self):
         self.forbidden = [
@@ -25,12 +23,18 @@ class ForbiddenSequenceChecker:
             "CTCGAG",    # XhoI
             "GCGGCCGC",  # NotI
             "AAGCTT",    # HindIII
+            # Asymmetric sites + their explicit reverse complements
+            "GAGACC",    # BsaI RC
+            "GAGACG",    # BsmBI RC
+            "GCAGGTG",   # AarI RC
         ]
 
     def run(self, dnaseq):
+        dnaseq = dnaseq.upper()
         rc = reverse_complement(dnaseq)
-        combined = (dnaseq + "x" + rc).upper()
         for site in self.forbidden:
-            if site in combined:
+            if site in dnaseq:
                 return False, site
+            if site in rc:
+                return False, f"{site} (reverse strand)" 
         return True, None
