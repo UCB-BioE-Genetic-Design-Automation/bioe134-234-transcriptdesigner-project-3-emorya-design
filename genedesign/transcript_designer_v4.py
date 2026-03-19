@@ -85,42 +85,77 @@ class TranscriptDesigner:
         codons.append("TAA")
         return ''.join(codons)
 
-    def check_cds(self, cds):
-        """Runs local/window checkers on the CDS. Returns True if all pass."""
-        # Restriction sites (e.g. BsaI) would be cut during cloning, destroying the construct
-        if not self.forbidden_checker.run(cds)[0]:
-            return False
-        # Only check first ~50bp for hairpins: 5' secondary structure (-4 to +37) is the major determinant of expression
-        if not hairpin_checker(cds[:50])[0]:
-            return False
-        # Internal -10/-35 promoter motifs would cause spurious transcription within the CDS
-        if not self.promoter_checker.run(cds)[0]:
-            return False
-        # Reverse-complement duplexes with other mRNAs trigger RNase III degradation
-        if not self.rna_interference_checker.run(cds)[0]:
-            return False
-        return True
+    def score_window(self, dna_fragment):
+        """Scores a DNA fragment: 0 = perfect, higher = worse. Counts how many checkers fail."""
+        score = 0
+        if not self.forbidden_checker.run(dna_fragment)[0]:
+            score += 10  # forbidden sequences are most critical
+        if not hairpin_checker(dna_fragment)[0]:
+            score += 5
+        if not self.promoter_checker.run(dna_fragment)[0]:
+            score += 3
+        return score
+
+    def enumerate_codon_options(self, amino_acid):
+        """Returns all synonymous codons for an amino acid, sorted by CAI weight (best first)."""
+        options = self.aa_to_codons[amino_acid]
+        return [c for c, _ in sorted(options, key=lambda x: x[1], reverse=True)]
 
     def run(self, peptide: str, ignores: set) -> Transcript:
         # Every ORF must begin with ATG; M (methionine) is the only amino acid that encodes ATG
         if peptide[0] != 'M':
             raise ValueError(f"Peptide must start with M (methionine), got '{peptide[0]}'")
 
-        max_iterations = 1000  # Full re-roll each attempt — no synonymous codon swapping
-        
+        max_global = 50  # Number of full re-starts before giving up
+        num_candidates = 20  # Number of random candidate windows to generate and rank
 
-        for _ in range(max_iterations):
-            # Guided random: full Monte Carlo re-roll of the entire CDS each attempt
+        for _ in range(max_global):
+            # Start with guided random encoding of the full protein
             codons = [self.guided_random_codon(aa) for aa in peptide]
             codons.append("TAA")  # stop codon
+
+            # GeneOptimizer-style: slide a 3-codon window (9bp) across the CDS
+            # For each window, consider preamble (upstream, already chosen) and downstream (next 6 aa)
+            # Generate candidates, score them, keep the best middle 3 codons
+            i = 0
+            while i < len(peptide):
+                window_end = min(i + 3, len(peptide))
+                # Context: preamble (upstream already finalized) + window + downstream (next 6 aa)
+                preamble_start = max(0, i - 3)
+                downstream_end = min(len(peptide), window_end + 6)
+
+                # Generate candidate encodings for the 3-codon window, score with full context
+                best_score = float('inf')
+                best_window_codons = codons[i:window_end]
+
+                for _ in range(num_candidates):
+                    # Random candidate for the window positions
+                    candidate = [self.guided_random_codon(peptide[j]) for j in range(i, window_end)]
+                    # Build full context: preamble + candidate + downstream
+                    context_codons = codons[preamble_start:i] + candidate + codons[window_end:downstream_end]
+                    context_dna = ''.join(context_codons)
+
+                    score = self.score_window(context_dna)
+                    if score < best_score:
+                        best_score = score
+                        best_window_codons = candidate
+
+                # Retain the best middle 3 codons
+                for j, codon in enumerate(best_window_codons):
+                    codons[i + j] = codon
+
+                i += 3  # move to next window
+
             cds = ''.join(codons)
 
-            # CAI and rare codon check: rare codons stall ribosomes due to low tRNA availability
-            if not self.codon_checker.run(codons)[0]:
+            # Final checks on the complete CDS
+            if not self.forbidden_checker.run(cds)[0]:
                 continue
-
-            # Guard clause: forbidden sequences, hairpins, promoters, RNA interference
-            if not self.check_cds(cds):
+            if not hairpin_checker(cds[:50])[0]:
+                continue
+            if not self.promoter_checker.run(cds)[0]:
+                continue
+            if not self.rna_interference_checker.run(cds)[0]:
                 continue
 
             # Sanity check: confirm the generated CDS translates back to the original protein
@@ -134,7 +169,7 @@ class TranscriptDesigner:
             selectedRBS = self.rbsChooser.run(cds, ignores)
             return Transcript(selectedRBS, peptide, codons)
 
-        raise ValueError(f"Failed to generate valid CDS for peptide after {max_iterations} attempts")
+        raise ValueError(f"Failed to generate valid CDS for peptide after {max_global} global attempts")
 
 
 if __name__ == "__main__":

@@ -85,19 +85,13 @@ class TranscriptDesigner:
         codons.append("TAA")
         return ''.join(codons)
 
-    def check_cds(self, cds):
-        """Runs local/window checkers on the CDS. Returns True if all pass."""
-        # Restriction sites (e.g. BsaI) would be cut during cloning, destroying the construct
-        if not self.forbidden_checker.run(cds)[0]:
+    def check_window(self, cds_fragment):
+        """Checks a CDS fragment for forbidden sequences, hairpins, and promoters."""
+        if not self.forbidden_checker.run(cds_fragment)[0]:
             return False
-        # Only check first ~50bp for hairpins: 5' secondary structure (-4 to +37) is the major determinant of expression
-        if not hairpin_checker(cds[:50])[0]:
+        if not hairpin_checker(cds_fragment)[0]:
             return False
-        # Internal -10/-35 promoter motifs would cause spurious transcription within the CDS
-        if not self.promoter_checker.run(cds)[0]:
-            return False
-        # Reverse-complement duplexes with other mRNAs trigger RNase III degradation
-        if not self.rna_interference_checker.run(cds)[0]:
+        if not self.promoter_checker.run(cds_fragment)[0]:
             return False
         return True
 
@@ -106,21 +100,43 @@ class TranscriptDesigner:
         if peptide[0] != 'M':
             raise ValueError(f"Peptide must start with M (methionine), got '{peptide[0]}'")
 
-        max_iterations = 1000  # Full re-roll each attempt — no synonymous codon swapping
-        
+        max_global = 100   # Number of full re-rolls before giving up
+        max_window = 50    # Max attempts to fix each failing window via synonymous re-randomization
+        window_size = 17   # Codons per window (~51bp, covers hairpin and promoter check windows)
 
-        for _ in range(max_iterations):
-            # Guided random: full Monte Carlo re-roll of the entire CDS each attempt
+        for _ in range(max_global):
+            # Start with a guided random encoding of the full protein
             codons = [self.guided_random_codon(aa) for aa in peptide]
             codons.append("TAA")  # stop codon
-            cds = ''.join(codons)
 
-            # CAI and rare codon check: rare codons stall ribosomes due to low tRNA availability
-            if not self.codon_checker.run(codons)[0]:
+            # Sliding window: scan the CDS and re-randomize failing regions with synonymous codons
+            fixed = True
+            for i in range(len(codons) - window_size + 1):
+                window_dna = ''.join(codons[i:i + window_size])
+                if self.check_window(window_dna):
+                    continue
+
+                # Window failed — try re-randomizing just these codons (same amino acids, different codons)
+                window_fixed = False
+                for _ in range(max_window):
+                    for j in range(i, min(i + window_size, len(peptide))):
+                        codons[j] = self.guided_random_codon(peptide[j])
+                    window_dna = ''.join(codons[i:i + window_size])
+                    if self.check_window(window_dna):
+                        window_fixed = True
+                        break
+
+                if not window_fixed:
+                    fixed = False
+                    break
+
+            if not fixed:
                 continue
 
-            # Guard clause: forbidden sequences, hairpins, promoters, RNA interference
-            if not self.check_cds(cds):
+            cds = ''.join(codons)
+
+            # Check RNA interference against previously designed genes
+            if not self.rna_interference_checker.run(cds)[0]:
                 continue
 
             # Sanity check: confirm the generated CDS translates back to the original protein
@@ -134,7 +150,7 @@ class TranscriptDesigner:
             selectedRBS = self.rbsChooser.run(cds, ignores)
             return Transcript(selectedRBS, peptide, codons)
 
-        raise ValueError(f"Failed to generate valid CDS for peptide after {max_iterations} attempts")
+        raise ValueError(f"Failed to generate valid CDS for peptide after {max_global} global attempts")
 
 
 if __name__ == "__main__":

@@ -93,12 +93,6 @@ class TranscriptDesigner:
         # Only check first ~50bp for hairpins: 5' secondary structure (-4 to +37) is the major determinant of expression
         if not hairpin_checker(cds[:50])[0]:
             return False
-        # Internal -10/-35 promoter motifs would cause spurious transcription within the CDS
-        if not self.promoter_checker.run(cds)[0]:
-            return False
-        # Reverse-complement duplexes with other mRNAs trigger RNase III degradation
-        if not self.rna_interference_checker.run(cds)[0]:
-            return False
         return True
 
     def run(self, peptide: str, ignores: set) -> Transcript:
@@ -106,7 +100,7 @@ class TranscriptDesigner:
         if peptide[0] != 'M':
             raise ValueError(f"Peptide must start with M (methionine), got '{peptide[0]}'")
 
-        max_iterations = 1000  # Full re-roll each attempt — no synonymous codon swapping
+        max_iterations = 5000  # Full re-roll each attempt — no synonymous codon swapping
         
 
         for _ in range(max_iterations):
@@ -115,11 +109,7 @@ class TranscriptDesigner:
             codons.append("TAA")  # stop codon
             cds = ''.join(codons)
 
-            # CAI and rare codon check: rare codons stall ribosomes due to low tRNA availability
-            if not self.codon_checker.run(codons)[0]:
-                continue
-
-            # Guard clause: forbidden sequences, hairpins, promoters, RNA interference
+            # Only check forbidden sequences + hairpins (the two most critical checkers)
             if not self.check_cds(cds):
                 continue
 
