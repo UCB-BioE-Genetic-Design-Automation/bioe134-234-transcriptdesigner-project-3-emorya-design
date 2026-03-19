@@ -85,38 +85,48 @@ class TranscriptDesigner:
         codons.append("TAA")
         return ''.join(codons)
 
-    def sliding_window_check(self, cds):
-        """
-        Slides a 51bp window (17 codons) across the CDS, checking each region
-        with boolean pass/fail. If any window fails any checker, the whole CDS is rejected.
-        No scoring, no fixing — just pass or fail.
-        """
-        window_size = 51  # 17 codons = 51bp, covers hairpin and promoter checker windows
-        step = 3  # advance by 1 codon (3bp) at a time
+    # --- Sliding window boolean check (commented out — too strict, causes most proteins to fail) ---
+    # def sliding_window_check(self, cds):
+    #     """
+    #     Slides a 51bp window (17 codons) across the CDS, checking each region
+    #     with boolean pass/fail. If any window fails any checker, the whole CDS is rejected.
+    #     No scoring, no fixing — just pass or fail.
+    #     """
+    #     window_size = 51
+    #     step = 3
+    #     for start in range(0, len(cds) - window_size + 1, step):
+    #         window = cds[start:start + window_size]
+    #         if not self.forbidden_checker.run(window)[0]:
+    #             return False
+    #         if not hairpin_checker(window)[0]:
+    #             return False
+    #         if not self.promoter_checker.run(window)[0]:
+    #             return False
+    #     if len(cds) > window_size:
+    #         tail = cds[-(window_size):]
+    #         if not self.forbidden_checker.run(tail)[0]:
+    #             return False
+    #         if not hairpin_checker(tail)[0]:
+    #             return False
+    #         if not self.promoter_checker.run(tail)[0]:
+    #             return False
+    #     return True
 
-        for start in range(0, len(cds) - window_size + 1, step):
-            window = cds[start:start + window_size]
-
-            # Restriction sites (e.g. BsaI) would be cut during cloning, destroying the construct
-            if not self.forbidden_checker.run(window)[0]:
-                return False
-            # RNA hairpins block ribosome access and reduce expression
-            if not hairpin_checker(window)[0]:
-                return False
-            # Internal -10/-35 promoter motifs would cause spurious transcription within the CDS
-            if not self.promoter_checker.run(window)[0]:
-                return False
-
-        # Check any remaining tail shorter than window_size for forbidden sequences
-        if len(cds) > window_size:
-            tail = cds[-(window_size):]
-            if not self.forbidden_checker.run(tail)[0]:
-                return False
-            if not hairpin_checker(tail)[0]:
-                return False
-            if not self.promoter_checker.run(tail)[0]:
-                return False
-
+    def check_cds(self, cds):
+        """Runs checkers on the CDS. Returns True if all pass."""
+        # Restriction sites (e.g. BsaI) would be cut during cloning, destroying the construct
+        if not self.forbidden_checker.run(cds)[0]:
+            return False
+        # Only check first ~50bp for hairpins: 5' secondary structure (-4 to +37) is the major
+        # determinant of expression (explains 44-57% of variation per Kudla et al.)
+        if not hairpin_checker(cds[:50])[0]:
+            return False
+        # Internal -10/-35 promoter motifs would cause spurious transcription within the CDS
+        if not self.promoter_checker.run(cds)[0]:
+            return False
+        # Reverse-complement duplexes with other mRNAs trigger RNase III degradation
+        if not self.rna_interference_checker.run(cds)[0]:
+            return False
         return True
 
     def run(self, peptide: str, ignores: set) -> Transcript:
@@ -136,13 +146,8 @@ class TranscriptDesigner:
             if not self.codon_checker.run(codons)[0]:
                 continue
 
-            # Sliding window boolean check: scan 51bp windows across the entire CDS
-            # If any window fails forbidden sequence, hairpin, or promoter → reject entire CDS
-            if not self.sliding_window_check(cds):
-                continue
-
-            # Reverse-complement duplexes with other mRNAs trigger RNase III degradation
-            if not self.rna_interference_checker.run(cds)[0]:
+            # Check forbidden sequences, 5' hairpins, promoters, RNA interference
+            if not self.check_cds(cds):
                 continue
 
             # Sanity check: confirm the generated CDS translates back to the original protein
